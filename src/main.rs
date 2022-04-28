@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
+#![feature(abi_efiapi)]
 
+mod uefi;
 use core::panic::PanicInfo;
 
 #[panic_handler]
@@ -9,6 +11,16 @@ fn panic(_info: &PanicInfo) -> ! {
 }
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "efiapi" fn efi_main(_handle: uefi::Handle, st: uefi::SystemTable) -> ! {
+    let stdout = st.stdout();
+    stdout.reset(false);
+
+    let string = "Hello UEFI".as_bytes();
+    let mut buf = [0u16; 20];
+    for i in 0..string.len() {
+        buf[i] = string[i] as u16;
+    }
+    stdout.output_string(buf.as_ptr());
+
     loop {}
 }
