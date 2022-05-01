@@ -16,12 +16,26 @@ pub extern "efiapi" fn efi_main(_handle: uefi::Handle, st: uefi::SystemTable) ->
     let stdout = st.stdout();
     stdout.reset(false);
 
-    let string = "Hello UEFI".as_bytes();
-    let mut buf = [0u16; 50];
-    for i in 0..string.len() {
-        buf[i] = string[i] as u16;
+    stdout.print("Hello UEFI");
+
+    let bs = st.get_boot_services();
+    let mut memory_map = uefi::MemoryMap::<{ 4096 * 4 }> {
+        buffer_size: 4096 * 4,
+        buffer: &mut [0; 4096 * 4],
+        map_size: 0,
+        map_key: 0,
+        descriptor_size: 0,
+        descriptor_version: 0,
+    };
+
+    if bs.get_memory_map(&mut memory_map) == uefi::Status::Success {
+        stdout.print("suceeded");
     }
-    stdout.output_string(buf.as_ptr());
+
+    let _ = match memory_map.get(1) {
+        Some(_) => stdout.print("succeed"),
+        None => stdout.print("failed"),
+    };
 
     loop {}
 }
