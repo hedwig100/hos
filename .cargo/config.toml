@@ -1,6 +1,8 @@
 [build]
-target = "hos.json"
+target = "x86_64-unknown-uefi"
+out-dir = "mnt/EFI/BOOT"
 
 [unstable]
-build-std = ["core", "compiler_builtins"]
+build-std = ["core", "compiler_builtins","alloc"]
 build-std-features = ["compiler-builtins-mem"]
+unstable-options = true
