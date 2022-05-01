@@ -12,7 +12,7 @@ pub struct Handle(*mut c_void);
 #[repr(C)]
 pub struct TableHeader {
     pub signature: u64,
-    pub revision: u64,
+    pub revision: u32,
     pub header_size: u32,
     pub crc32: u32,
     _reserved: u32,

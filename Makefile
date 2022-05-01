@@ -1,25 +1,17 @@
 
-# requirements
-# qemu,dosfstools on Mac
+# requirements on Ubuntu20.04
+# - utils
+# sudo apt install gcc,make,qemu,qemu-system-x86,curl,wget
+# - rustup
+# curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-run: make_img
-	qemu-system-x86_64 \
-	-drive if=pflash,format=raw,file=OVMF_CODE.fd \
-	-drive if=pflash,format=raw,file=OVMF_VARS.fd \
-	-hda hos.img
-
-make_img: build
-	qemu-img create -f raw hos.img 200M && \
-	mkfs.fat -n 'HEDWIG OS' -s 2 -f 2 -R 32 -F 32 hos.img && \
-	mkdir -p mnt && \
-	hdiutil attach -mountpoint mnt hos.img && \
+run: build
 	mkdir -p mnt/EFI/BOOT && \
-	cp target/hos/debug/hos mnt/EFI/BOOT/BOOTX64.EFI && \
-	hdiutil detach mnt
+	cp mnt/EFI/BOOT/hos.efi mnt/EFI/BOOT/BOOTx64.EFI && \
+	qemu-system-x86_64 --bios RELEASEX64_OVMF.fd -drive format=raw,file=fat:rw:mnt
 
 build:
 	cargo build
 
 dl_ovmf:
-	curl -O https://raw.githubusercontent.com/uchan-nos/mikanos-build/master/devenv/OVMF_CODE.fd
-	curl -O https://raw.githubusercontent.com/uchan-nos/mikanos-build/master/devenv/OVMF_VARS.fd
+	wget "https://github.com/retrage/edk2-nightly/raw/master/bin/RELEASEX64_OVMF.fd"

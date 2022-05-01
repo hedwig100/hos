@@ -1,7 +1,4 @@
 /target
 
-# qemu image
-hos.img
 /mnt
-OVMF_CODE.fd
-OVMF_VARS.fd
+RELEASEX64_OVMF.fd
