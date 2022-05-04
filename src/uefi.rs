@@ -1,8 +1,10 @@
-use core::{cmp, ffi::c_void};
+use core::{cmp, ffi::c_void, ptr};
 
 // Common UEFI Data Types
 type Boolean = bool;
 type Uintn = usize;
+type Uint8 = u8;
+type Uint16 = u16;
 type Uint32 = u32;
 type Uint64 = u64;
 type Char16 = u16;
@@ -13,12 +15,22 @@ type Tpl = Uintn;
 #[repr(C)]
 pub struct Handle(*mut c_void);
 
-#[derive(PartialEq)]
+#[repr(C)]
+pub struct Guid {
+    pub data1: Uint32,
+    pub data2: Uint16,
+    pub data3: Uint16,
+    pub data4: [Uint8; 8],
+}
+
+#[derive(PartialEq, Debug)]
 #[repr(usize)]
 pub enum Status {
     Success = 0,
     LoadError = 1,
     InvalidParameter = 2,
+    Unsupported = 3,
+    BadBufferSize = 4,
     BufferTooSmall = 5,
 }
 
@@ -86,7 +98,22 @@ pub struct BootServices {
         descriptor_size: *mut Uintn,
         descriptor_version: *mut Uintn,
     ) -> Status,
-    // TBC..
+
+    _buf1: [usize; 11],
+
+    handle_protocol: unsafe extern "efiapi" fn(
+        handle: Handle,
+        protocol: *const Guid,
+        interface: &mut *mut c_void,
+    ) -> Status,
+
+    _buf2: [usize; 20],
+
+    locate_protocol: unsafe extern "efiapi" fn(
+        protocol: *const Guid,
+        registration: *mut c_void,
+        interface: &mut *mut c_void,
+    ) -> Status,
 }
 
 impl BootServices {
@@ -103,6 +130,37 @@ impl BootServices {
                 &mut memory_map.descriptor_size,
                 &mut memory_map.descriptor_version,
             )
+        }
+    }
+
+    pub fn _open_simple_file_system_protocol(
+        &self,
+        handle: Handle,
+    ) -> Result<SimpleFileSystemProtocol, Status> {
+        let mut interface = ptr::null_mut();
+        let status = unsafe {
+            (self.handle_protocol)(handle, &SIMPLE_FILE_SYSTEM_PROTOCOL_GUID, &mut interface)
+        };
+        if status == Status::Success {
+            Ok(unsafe { *interface.cast::<SimpleFileSystemProtocol>() })
+        } else {
+            Err(status)
+        }
+    }
+
+    pub fn open_simple_file_system_protocol(&self) -> Result<SimpleFileSystemProtocol, Status> {
+        let mut interface = ptr::null_mut();
+        let status = unsafe {
+            (self.locate_protocol)(
+                &SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
+                ptr::null_mut(),
+                &mut interface,
+            )
+        };
+        if status == Status::Success {
+            Ok(unsafe { *interface.cast::<SimpleFileSystemProtocol>() })
+        } else {
+            Err(status)
         }
     }
 }
@@ -158,6 +216,92 @@ impl<'a, const BUFFER_SIZE: usize> MemoryMap<'a, BUFFER_SIZE> {
     }
 }
 
+const SIMPLE_FILE_SYSTEM_PROTOCOL_GUID: Guid = Guid {
+    data1: 0x0964e5b22,
+    data2: 0x6459,
+    data3: 0x11d2,
+    data4: [0x8eu8, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b],
+};
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct SimpleFileSystemProtocol {
+    pub revision: Uint64,
+    open_volume: unsafe extern "efiapi" fn(
+        this: &mut SimpleFileSystemProtocol,
+        root: &mut *mut FileProtocol,
+    ) -> Status,
+}
+
+impl SimpleFileSystemProtocol {
+    pub fn open_volume(&mut self) -> Result<FileProtocol, Status> {
+        let mut root = ptr::null_mut();
+        let status = unsafe { (self.open_volume)(self, &mut root) };
+        if status == Status::Success {
+            Ok(unsafe { *root.cast::<FileProtocol>() })
+        } else {
+            Err(status)
+        }
+    }
+}
+
+#[repr(u64)]
+pub enum OpenMode {
+    Read = 0x0000000000000001,
+    Write = 0x0000000000000002,
+    Create = 0x8000000000000000,
+}
+
+#[repr(u64)]
+pub enum FileAttributes {
+    Null = 0,
+    ReadOnly = 0x0000000000000001,
+    Hidden = 0x0000000000000002,
+    System = 0x0000000000000004,
+    Reserved = 0x0000000000000008,
+    Directory = 0x0000000000000010,
+    Archive = 0x0000000000000020,
+    ValidAttr = 0x0000000000000037,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct FileProtocol {
+    pub revision: Uint64,
+    open: unsafe extern "efiapi" fn(
+        this: &FileProtocol,
+        new_handle: &mut *mut FileProtocol,
+        filename: *const Char16,
+        open_mode: *const OpenMode,
+        attributes: *const FileAttributes,
+    ) -> Status,
+}
+
+impl FileProtocol {
+    pub fn open(
+        &self,
+        filename: &str,
+        open_mode: OpenMode,
+        attributes: FileAttributes,
+    ) -> Result<FileProtocol, Status> {
+        let mut ptr = ptr::null_mut();
+        let status = unsafe {
+            (self.open)(
+                &self,
+                &mut ptr,
+                filename.as_ptr().cast::<Char16>(),
+                &open_mode,
+                &attributes,
+            )
+        };
+        if status == Status::Success {
+            Ok(unsafe { *ptr })
+        } else {
+            Err(status)
+        }
+    }
+}
+
 #[repr(C)]
 pub struct SimpleTextOutputProtocol {
     reset: unsafe extern "efiapi" fn(
@@ -177,8 +321,8 @@ impl SimpleTextOutputProtocol {
     }
     pub fn print(&self, string: &str) -> Status {
         let string = string.as_bytes();
-        let mut buffer = [0u16; 40];
-        let size = cmp::min(40, string.len());
+        let mut buffer = [0u16; 100];
+        let size = cmp::min(100, string.len());
         for i in 0..size {
             buffer[i] = string[i] as u16;
         }
