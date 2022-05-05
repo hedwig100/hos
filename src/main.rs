@@ -2,7 +2,9 @@
 #![no_main]
 #![feature(abi_efiapi)]
 
+use core::ffi::c_void;
 use core::panic::PanicInfo;
+use core::ptr;
 
 mod uefi;
 
@@ -39,7 +41,12 @@ pub extern "efiapi" fn efi_main(_handle: uefi::Handle, st: uefi::SystemTable) ->
     };
 
     // open file
-    let mut sfsp = bs.open_simple_file_system_protocol().unwrap();
+    let mut handle_buffer = uefi::HandleBuffer {
+        buffer_size: 1024,
+        buffer: &mut [uefi::Handle(ptr::null_mut() as *mut c_void); 1024],
+    };
+    let _ = bs.get_sfsp_handle(&mut handle_buffer);
+    let mut sfsp = bs.open_sfsp(handle_buffer.buffer[0]).unwrap();
     stdout.print("successful opening a simple file system protocol.");
     let root = sfsp.open_volume();
     let _ = match root {

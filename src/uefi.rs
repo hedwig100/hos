@@ -13,7 +13,7 @@ type Tpl = Uintn;
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub struct Handle(*mut c_void);
+pub struct Handle(pub *mut c_void);
 
 #[repr(C)]
 pub struct Guid {
@@ -107,7 +107,28 @@ pub struct BootServices {
         interface: &mut *mut c_void,
     ) -> Status,
 
-    _buf2: [usize; 20],
+    _buf2: [usize; 2],
+
+    locate_handle: unsafe extern "efiapi" fn(
+        search_type: LocateSearchType,
+        protocol: *const Guid,
+        search_key: *const c_void,
+        buffer_size: *mut Uintn,
+        buffer: *mut Handle,
+    ) -> Status,
+
+    _buf3: [usize; 12],
+
+    open_protocol: unsafe extern "efiapi" fn(
+        handle: Handle,
+        protocol: *const Guid,
+        interface: &mut *mut c_void,
+        agent_handle: Handle,
+        controller_handle: Handle,
+        attributes: Uint32,
+    ) -> Status,
+
+    _buf4: [usize; 4],
 
     locate_protocol: unsafe extern "efiapi" fn(
         protocol: *const Guid,
@@ -133,10 +154,31 @@ impl BootServices {
         }
     }
 
-    pub fn _open_simple_file_system_protocol(
+    pub fn get_sfsp_handle<const BUFFER_SIZE: usize>(
         &self,
-        handle: Handle,
-    ) -> Result<SimpleFileSystemProtocol, Status> {
+        handle_buffer: &mut HandleBuffer<BUFFER_SIZE>,
+    ) -> Status {
+        unsafe {
+            (self.locate_handle)(
+                LocateSearchType::ByProtocol,
+                &SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
+                ptr::null(),
+                &mut handle_buffer.buffer_size,
+                handle_buffer.buffer.as_mut_ptr(),
+            )
+        }
+    }
+
+    // pub fn _open_sfsp(&self,handle:Handle) -> Result<SimpleFileSystemProtocol,Status> {
+    //     let mut interface = ptr::null_mut();
+    //     let status = unsafe{(self.open_protocol)(
+    //         handle,
+    //         &SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
+    //         &mut interface,
+    //     )}
+    // }
+
+    pub fn open_sfsp(&self, handle: Handle) -> Result<SimpleFileSystemProtocol, Status> {
         let mut interface = ptr::null_mut();
         let status = unsafe {
             (self.handle_protocol)(handle, &SIMPLE_FILE_SYSTEM_PROTOCOL_GUID, &mut interface)
@@ -148,7 +190,7 @@ impl BootServices {
         }
     }
 
-    pub fn open_simple_file_system_protocol(&self) -> Result<SimpleFileSystemProtocol, Status> {
+    pub fn _open_simple_file_system_protocol(&self) -> Result<SimpleFileSystemProtocol, Status> {
         let mut interface = ptr::null_mut();
         let status = unsafe {
             (self.locate_protocol)(
@@ -163,6 +205,18 @@ impl BootServices {
             Err(status)
         }
     }
+}
+
+pub struct HandleBuffer<'a, const BUFFER_SIZE: usize> {
+    pub buffer_size: usize,
+    pub buffer: &'a mut [Handle; BUFFER_SIZE],
+}
+
+#[repr(C)]
+pub enum LocateSearchType {
+    AllHandles,
+    ByRegisterNotify,
+    ByProtocol,
 }
 
 #[repr(C)]
@@ -238,7 +292,7 @@ impl SimpleFileSystemProtocol {
         let mut root = ptr::null_mut();
         let status = unsafe { (self.open_volume)(self, &mut root) };
         if status == Status::Success {
-            Ok(unsafe { *root.cast::<FileProtocol>() })
+            Ok(unsafe { *root })
         } else {
             Err(status)
         }
