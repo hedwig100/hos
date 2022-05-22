@@ -125,7 +125,7 @@ pub struct BootServices {
         interface: &mut *mut c_void,
         agent_handle: Handle,
         controller_handle: Handle,
-        attributes: Uint32,
+        attributes: Attributes,
     ) -> Status,
 
     _buf4: [usize; 4],
@@ -178,10 +178,34 @@ impl BootServices {
     //     )}
     // }
 
-    pub fn open_sfsp(&self, handle: Handle) -> Result<SimpleFileSystemProtocol, Status> {
+    // _open_sfspはhandle_protocolをつかっている。open_protocol推奨らしい
+    pub fn _open_sfsp(&self, handle: Handle) -> Result<SimpleFileSystemProtocol, Status> {
         let mut interface = ptr::null_mut();
         let status = unsafe {
             (self.handle_protocol)(handle, &SIMPLE_FILE_SYSTEM_PROTOCOL_GUID, &mut interface)
+        };
+        if status == Status::Success {
+            Ok(unsafe { *interface.cast::<SimpleFileSystemProtocol>() })
+        } else {
+            Err(status)
+        }
+    }
+
+    pub fn open_sfsp(
+        &self,
+        handle: Handle,
+        image_handle: Handle,
+    ) -> Result<SimpleFileSystemProtocol, Status> {
+        let mut interface = ptr::null_mut();
+        let status = unsafe {
+            (self.open_protocol)(
+                handle,
+                &SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
+                &mut interface,
+                image_handle,
+                Handle(ptr::null_mut()),
+                Attributes::ByHandleProtocol,
+            )
         };
         if status == Status::Success {
             Ok(unsafe { *interface.cast::<SimpleFileSystemProtocol>() })
@@ -207,11 +231,23 @@ impl BootServices {
     }
 }
 
+#[allow(dead_code)]
+#[repr(u32)]
+pub enum Attributes {
+    ByHandleProtocol = 1 << 0,
+    GetProtocol = 1 << 1,
+    TestProtocol = 1 << 2,
+    ByChildController = 1 << 3,
+    ByDriver = 1 << 4,
+    Exclusive = 1 << 5,
+}
+
 pub struct HandleBuffer<'a, const BUFFER_SIZE: usize> {
     pub buffer_size: usize,
     pub buffer: &'a mut [Handle; BUFFER_SIZE],
 }
 
+#[allow(dead_code)]
 #[repr(C)]
 pub enum LocateSearchType {
     AllHandles,
@@ -219,6 +255,7 @@ pub enum LocateSearchType {
     ByProtocol,
 }
 
+#[allow(dead_code)]
 #[repr(C)]
 pub enum AllocateType {
     AnyPages,
@@ -227,6 +264,7 @@ pub enum AllocateType {
     MaxType,
 }
 
+#[allow(dead_code)]
 #[repr(C)]
 pub enum MemoryType {
     ReservedMemoryType,
@@ -290,7 +328,7 @@ pub struct SimpleFileSystemProtocol {
 impl SimpleFileSystemProtocol {
     pub fn open_volume(&mut self) -> Result<FileProtocol, Status> {
         let mut root = ptr::null_mut();
-        let status = unsafe { (self.open_volume)(self, &mut root) };
+        let status = unsafe { (self.open_volume)(self, &mut root) }; //この行
         if status == Status::Success {
             Ok(unsafe { *root })
         } else {
