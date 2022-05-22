@@ -154,14 +154,15 @@ impl BootServices {
         }
     }
 
-    pub fn get_sfsp_handle<const BUFFER_SIZE: usize>(
+    pub fn get_handle<const BUFFER_SIZE: usize>(
         &self,
         handle_buffer: &mut HandleBuffer<BUFFER_SIZE>,
+        guid: &Guid,
     ) -> Status {
         unsafe {
             (self.locate_handle)(
                 LocateSearchType::ByProtocol,
-                &SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
+                guid,
                 ptr::null(),
                 &mut handle_buffer.buffer_size,
                 handle_buffer.buffer.as_mut_ptr(),
@@ -169,14 +170,16 @@ impl BootServices {
         }
     }
 
-    // pub fn _open_sfsp(&self,handle:Handle) -> Result<SimpleFileSystemProtocol,Status> {
-    //     let mut interface = ptr::null_mut();
-    //     let status = unsafe{(self.open_protocol)(
-    //         handle,
-    //         &SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
-    //         &mut interface,
-    //     )}
-    // }
+    pub fn open_loadedimage(&self, handle: Handle) -> Result<LoadedImageProtocol, Status> {
+        let mut interface = ptr::null_mut();
+        let status =
+            unsafe { (self.handle_protocol)(handle, &LOADED_IMAGE_PROTOCOL_GUID, &mut interface) };
+        if status == Status::Success {
+            Ok(unsafe { *interface.cast::<LoadedImageProtocol>() })
+        } else {
+            Err(status)
+        }
+    }
 
     // _open_sfspはhandle_protocolをつかっている。open_protocol推奨らしい
     pub fn _open_sfsp(&self, handle: Handle) -> Result<SimpleFileSystemProtocol, Status> {
@@ -308,7 +311,24 @@ impl<'a, const BUFFER_SIZE: usize> MemoryMap<'a, BUFFER_SIZE> {
     }
 }
 
-const SIMPLE_FILE_SYSTEM_PROTOCOL_GUID: Guid = Guid {
+pub const LOADED_IMAGE_PROTOCOL_GUID: Guid = Guid {
+    data1: 0x5b1b31a1,
+    data2: 0x9562,
+    data3: 0x11d2,
+    data4: [0x8e, 0x3f, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b],
+};
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct LoadedImageProtocol<'a> {
+    pub revision: Uint32,
+    parent_handle: Handle,
+    system_table: &'a SystemTable,
+    pub device_handle: Handle,
+    // to be continued..
+}
+
+pub const SIMPLE_FILE_SYSTEM_PROTOCOL_GUID: Guid = Guid {
     data1: 0x0964e5b22,
     data2: 0x6459,
     data3: 0x11d2,
